@@ -60,6 +60,22 @@ function stripForStorage(messages) {
   });
 }
 
+function inferWireFormat(messages = []) {
+  for (const message of messages) {
+    if (message.role === 'tool' || Array.isArray(message.tool_calls)) return 'openai';
+    // Anthropic 的 assistant content 即使只有普通文本也始终是数组；
+    // 这能识别补丁前已经保存、但还没有工具调用的旧对话。
+    if (message.role === 'assistant' && Array.isArray(message.content)) return 'anthropic';
+    if (Array.isArray(message.content) && message.content.some((block) =>
+      ['tool_result', 'tool_use', 'thinking'].includes(block?.type))) return 'anthropic';
+  }
+  return null;
+}
+
+function wireFormatLabel(format) {
+  return format === 'anthropic' ? 'Anthropic Messages' : 'OpenAI 兼容';
+}
+
 async function saveConversation(session) {
   if (!session.convId || !session.view.length) return;
   const now = Date.now();
@@ -73,6 +89,7 @@ async function saveConversation(session) {
       origin: session.origin || '',
       updatedAt: now,
       wire: stripForStorage(session.messages),
+      wireFormat: session.wireFormat || inferWireFormat(session.messages),
       view: session.view,
     },
   });
@@ -278,6 +295,7 @@ chrome.runtime.onConnect.addListener((port) => {
     usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
     warnedContext: false,
     origin: '',
+    wireFormat: null,
     mode: 'auto',
     abort: null,
     busy: false,
@@ -296,6 +314,7 @@ chrome.runtime.onConnect.addListener((port) => {
         snapshotIds: saved.snapshotIds || [],
         usage: saved.usage || session.usage,
         origin: saved.origin || '',
+        wireFormat: saved.wireFormat || inferWireFormat(saved.messages),
         mode: saved.mode || 'auto',
       });
       post(port, {
@@ -368,6 +387,7 @@ chrome.runtime.onConnect.addListener((port) => {
       await saveConversation(session);
       Object.assign(session, {
         convId: null, messages: [], view: [], snapshotIds: [], origin: '',
+        wireFormat: null,
         usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
         warnedContext: false,
       });
@@ -423,6 +443,7 @@ chrome.runtime.onConnect.addListener((port) => {
         // 存档时快照已被剥成占位，恢复后没有任何有效快照
         snapshotIds: [],
         origin: conv.origin || '',
+        wireFormat: conv.wireFormat || inferWireFormat(conv.wire || []),
       });
       saveSession(session);
       post(port, { type: 'conversation_loaded', view: session.view, title: conv.title });
@@ -434,10 +455,11 @@ chrome.runtime.onConnect.addListener((port) => {
       await chrome.storage.local.set({ [CONV_INDEX]: index.filter((c) => c.id !== msg.id) });
       if (session.convId === msg.id) {
         Object.assign(session, {
-        convId: null, messages: [], view: [], snapshotIds: [], origin: '',
-        usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
-        warnedContext: false,
-      });
+          convId: null, messages: [], view: [], snapshotIds: [], origin: '',
+          wireFormat: null,
+          usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
+          warnedContext: false,
+        });
         chrome.storage.session.remove(SESSION_KEY);
         post(port, { type: 'reset_done' });
       }
@@ -487,6 +509,7 @@ function saveSession(session) {
         snapshotIds: session.snapshotIds,
         usage: session.usage,
         origin: session.origin,
+        wireFormat: session.wireFormat,
         mode: session.mode,
       },
     })
@@ -516,6 +539,15 @@ async function runAgent(userText, port, session) {
   if (!provider) throw new Error(`未知的供应商：${config.provider}`);
   if (!config.apiKey) throw new Error('还没配置 API Key。点扩展图标右键 → 选项，填好后再试。');
   if (!config.model) throw new Error('还没填模型名。点扩展图标右键 → 选项。');
+
+  const wireFormat = provider.wireFormat || config.provider;
+  if (session.messages.length && session.wireFormat && session.wireFormat !== wireFormat) {
+    throw new Error(
+      `当前对话使用 ${wireFormatLabel(session.wireFormat)} 格式，` +
+      `当前模型使用 ${wireFormatLabel(wireFormat)} 格式。请先点击“新对话”再继续。`
+    );
+  }
+  session.wireFormat ||= wireFormat;
 
   const tab = await activeTab();
 

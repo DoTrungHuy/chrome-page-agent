@@ -112,6 +112,29 @@ await panel.evalJs(`[...document.querySelectorAll('#modelMenu .menu-row')][0].cl
 await sleep(600);
 s.t('切回 openai 账号成功', (await sw.evalJs(`chrome.storage.local.get('provider')`)).provider === 'openai');
 
+// ── 1b. 跨协议历史保护 ───────────────────────────────────────────
+s.section('跨协议历史保护');
+await reset(); await setMode('always');
+await ask('先用 OpenAI 兼容接口聊一句');
+
+await panel.evalJs(`document.getElementById('modelBtn').click()`);
+await sleep(300);
+await panel.evalJs(`[...document.querySelectorAll('#modelMenu .menu-row')][2].click()`);
+await sleep(600);
+await ask('切到 Anthropic 后继续');
+{
+  const u = await panelState(panel);
+  s.t('跨协议时阻止混用历史消息',
+    u.errors.some((x) => x.includes('格式') && x.includes('新对话')), JSON.stringify(u.errors));
+  s.t('阻止后没有把错误格式发给模型', mock.reqs.length === 0, JSON.stringify(mock.reqs));
+}
+
+await panel.evalJs(`document.getElementById('modelBtn').click()`);
+await sleep(300);
+await panel.evalJs(`[...document.querySelectorAll('#modelMenu .menu-row')][0].click()`);
+await sleep(600);
+await reset();
+
 // ── 2. 模式切换 ──────────────────────────────────────────────────
 s.section('模式切换');
 await setMode('plan');
