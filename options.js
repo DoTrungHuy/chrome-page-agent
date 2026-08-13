@@ -7,6 +7,7 @@ const RUN_DEFAULTS = {
   maxSteps: 20,
   temperature: null,
   tokenParam: 'max_tokens',
+  contextLimit: 128000,
 };
 
 // 一个账号 = 接口格式 + Base URL + API Key + 它下面的模型列表。
@@ -258,6 +259,7 @@ $('save').addEventListener('click', async () => {
     maxSteps: Math.min(Math.max(Number($('maxSteps').value) || RUN_DEFAULTS.maxSteps, 1), 50),
     temperature: temp === '' ? null : Number(temp),
     tokenParam: $('tokenParam').value,
+    contextLimit: Math.max(0, Number($('contextLimit').value) || 0),
     // 旧结构清掉，避免下次又走迁移
     profiles: [], activeProfile: '',
   });

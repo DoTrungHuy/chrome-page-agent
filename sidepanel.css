@@ -80,6 +80,17 @@ header {
   filter: drop-shadow(0 2px 5px rgba(43, 82, 216, 0.28));
 }
 
+.usage {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+  cursor: default;
+  white-space: nowrap;
+}
+/* 快撞上下文上限时变红，扫一眼就知道该开新对话了 */
+.usage.warn { color: var(--danger); font-weight: 600; }
+
 .step {
   font-size: 11.5px;
   color: var(--accent);
@@ -202,6 +213,21 @@ button.icon:hover { background: var(--surface); color: var(--fg); }
 }
 
 .msg.info { color: var(--muted); font-size: 12px; padding: 0 2px; }
+
+/* 一轮结束后的操作行 */
+.turn-actions { display: flex; gap: 6px; padding: 0 2px; margin-top: -4px; }
+.act {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.act:hover { color: var(--fg-soft); border-color: var(--line-strong); }
 
 details.thinking {
   border: 1px solid var(--line);

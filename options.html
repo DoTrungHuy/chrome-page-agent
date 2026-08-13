@@ -125,9 +125,18 @@
           </select>
         </label>
       </div>
+      <div class="row">
+        <label>
+          上下文上限（填 0 关闭预警）
+          <input id="contextLimit" type="number" min="0" step="1000" />
+        </label>
+        <label></label>
+      </div>
       <p style="margin:12px 0 0;font-size:12px;color:var(--muted)">
         最大输出 token 含推理 token，设小了会被截断。部分推理模型不接受 temperature，留空最安全；
         OpenAI 新一代推理模型（o 系列、gpt-5）只认 <code>max_completion_tokens</code>。
+        「上下文上限」填你所用模型的窗口大小 —— 扩展无法自己知道，它只用来在用量接近上限时
+        提前提醒你开新对话，<strong>不会影响请求本身</strong>。
       </p>
     </div>
 

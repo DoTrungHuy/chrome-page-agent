@@ -10,8 +10,16 @@
     "storage",
     "tabs",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "contextMenus"
   ],
+
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" },
+      "description": "打开 Page Agent 侧边栏"
+    }
+  },
 
   "host_permissions": [
     "<all_urls>",

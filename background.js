@@ -21,6 +21,9 @@ const DEFAULTS = {
   maxSteps: 20,
   temperature: null,
   tokenParam: 'max_tokens',
+  // 模型的上下文窗口。扩展没法自己知道，所以让用户填；
+  // 只用来在接近上限时提前预警，不影响请求本身。
+  contextLimit: 128000,
 };
 
 // 只读工具：计划模式下只暴露这几个，模型想点也点不了
@@ -213,19 +216,67 @@ const NO_PAGE_PROMPT = `这一轮用户停在新标签页或浏览器内部页�
 
 // ─────────────────────────────────────────────────────────────────────
 
+// 面板打开时的所有 port。右键菜单要把选中的文字送进去，得能找到它们。
+const openPorts = new Set();
+const PENDING_KEY = 'pendingPrompt';
+
+const MENUS = [
+  { id: 'explain', title: '用 Page Agent 解释「%s」', template: (t) => `解释一下这段内容：\n\n「${t}」` },
+  { id: 'translate', title: '用 Page Agent 翻译「%s」', template: (t) => `把这段翻译成中文（如果本来就是中文就翻成英文）：\n\n「${t}」` },
+  { id: 'ask', title: '就「%s」提问…', template: (t) => `关于这段内容：\n\n「${t}」\n\n我的问题是：` },
+];
+
 chrome.runtime.onInstalled.addListener(() => {
   // 点扩展图标直接开侧边栏
   chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+  chrome.contextMenus.removeAll(() => {
+    for (const m of MENUS) {
+      chrome.contextMenus.create({ id: m.id, title: m.title, contexts: ['selection'] });
+    }
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  const menu = MENUS.find((m) => m.id === info.menuItemId);
+  if (!menu || !info.selectionText) return;
+  const text = menu.template(info.selectionText.trim().slice(0, 2000));
+
+  // 右键菜单的点击本身算用户手势，可以直接开侧边栏
+  try {
+    if (tab?.windowId != null) await chrome.sidePanel.open({ windowId: tab.windowId });
+  } catch { /* 面板可能已经开着 */ }
+
+  if (openPorts.size) {
+    // 面板已经在了，直接送过去
+    for (const p of openPorts) post(p, { type: 'prefill', text });
+  } else {
+    // 面板还在加载，先存着，它连上来时自己取
+    await chrome.storage.session.set({ [PENDING_KEY]: text });
+  }
 });
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'agent') return;
+  openPorts.add(port);
+
+  // 右键菜单在面板打开之前就点了的话，文字存在这里，现在取出来
+  chrome.storage.session.get(PENDING_KEY).then((r) => {
+    if (r[PENDING_KEY]) {
+      post(port, { type: 'prefill', text: r[PENDING_KEY] });
+      chrome.storage.session.remove(PENDING_KEY);
+    }
+  });
 
   const session = {
     convId: null,
     messages: [],
     view: [],               // 与厂商无关的展示流水，恢复历史时直接渲染
     snapshotIds: [],        // 当前有效的页面快照 id，用来把上一份压掉
+    // lastInput 是「这一轮发出去的整个对话有多长」，peakInput 用来看离上限多远；
+    // output 是累加的，因为那才是真实产生的量
+    usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
+    warnedContext: false,
     origin: '',
     mode: 'auto',
     abort: null,
@@ -243,6 +294,7 @@ chrome.runtime.onConnect.addListener((port) => {
         messages: saved.messages,
         view: saved.view || [],
         snapshotIds: saved.snapshotIds || [],
+        usage: saved.usage || session.usage,
         origin: saved.origin || '',
         mode: saved.mode || 'auto',
       });
@@ -314,9 +366,44 @@ chrome.runtime.onConnect.addListener((port) => {
       // 「新对话」：先把当前这条存进历史，再开一条空的
       session.abort?.abort();
       await saveConversation(session);
-      Object.assign(session, { convId: null, messages: [], view: [], snapshotIds: [], origin: '' });
+      Object.assign(session, {
+        convId: null, messages: [], view: [], snapshotIds: [], origin: '',
+        usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
+        warnedContext: false,
+      });
       chrome.storage.session.remove(SESSION_KEY);
       post(port, { type: 'reset_done' });
+      return;
+    }
+    if (msg.type === 'regenerate') {
+      if (session.busy) return;
+      // 回退到最后一条用户消息之前，用同样的话重跑一遍
+      const idx = session.messages.map((m) => m.role === 'user' && typeof m.content === 'string').lastIndexOf(true);
+      if (idx < 0) { post(port, { type: 'error', message: '没有可以重新生成的内容。' }); return; }
+      const text = session.messages[idx].content;
+      session.messages = session.messages.slice(0, idx);
+      const vIdx = session.view.map((v) => v.role === 'user').lastIndexOf(true);
+      session.view = vIdx >= 0 ? session.view.slice(0, vIdx) : [];
+      // 快照 id 指向的消息已经被截掉了，清空以免压缩逻辑找错对象
+      session.snapshotIds = [];
+      // 重绘时要**带上**那句用户消息：用户气泡平时由面板自己的提交处理器创建，
+      // 重放这条路没人管它，不带上界面里那句话就凭空消失了。
+      // runAgent 随后会把同一条 push 进 session.view，两边保持一致。
+      post(port, { type: 'rewind', view: [...session.view, { role: 'user', text }] });
+
+      session.busy = true;
+      try {
+        await runAgent(text, port, session);
+      } catch (e) {
+        if (e?.name === 'AbortError') post(port, { type: 'info', message: '已中断。' });
+        else post(port, { type: 'error', message: String(e?.message || e) });
+      } finally {
+        session.busy = false;
+        session.abort = null;
+        saveSession(session);
+        await saveConversation(session);
+        post(port, { type: 'done' });
+      }
       return;
     }
     if (msg.type === 'list_conversations') {
@@ -346,7 +433,11 @@ chrome.runtime.onConnect.addListener((port) => {
       await chrome.storage.local.remove(CONV_KEY(msg.id));
       await chrome.storage.local.set({ [CONV_INDEX]: index.filter((c) => c.id !== msg.id) });
       if (session.convId === msg.id) {
-        Object.assign(session, { convId: null, messages: [], view: [], snapshotIds: [], origin: '' });
+        Object.assign(session, {
+        convId: null, messages: [], view: [], snapshotIds: [], origin: '',
+        usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
+        warnedContext: false,
+      });
         chrome.storage.session.remove(SESSION_KEY);
         post(port, { type: 'reset_done' });
       }
@@ -377,6 +468,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 
   port.onDisconnect.addListener(() => {
+    openPorts.delete(port);
     session.abort?.abort();
     // 面板关了，还在等确认的工具一律按拒绝处理，别让循环永远挂着
     for (const resolve of session.approvals.values()) resolve(false);
@@ -393,6 +485,7 @@ function saveSession(session) {
         messages: session.messages,
         view: session.view,
         snapshotIds: session.snapshotIds,
+        usage: session.usage,
         origin: session.origin,
         mode: session.mode,
       },
@@ -497,6 +590,28 @@ async function runAgent(userText, port, session) {
 
     provider.pushAssistant(session.messages, result);
     if (result.text) session.view.push({ role: 'assistant', text: result.text });
+
+    // 用量累计。input 每轮都是「整个对话的输入」，所以峰值才是衡量
+    // 离上下文上限还有多远的指标；output 才需要累加。
+    const u = result.usage || {};
+    session.usage.output += u.output || 0;
+    session.usage.cacheRead += u.cacheRead || 0;
+    session.usage.lastInput = u.input || session.usage.lastInput;
+    session.usage.peakInput = Math.max(session.usage.peakInput, u.input || 0);
+    session.usage.turns += 1;
+    post(port, { type: 'usage', ...session.usage, limit: config.contextLimit });
+
+    // 快撞上限时提前说，别等 API 报错。只提醒一次，免得每轮刷屏。
+    if (config.contextLimit > 0 && !session.warnedContext
+        && session.usage.lastInput > config.contextLimit * 0.8) {
+      session.warnedContext = true;
+      post(port, {
+        type: 'info',
+        message: `上下文已用到 ${session.usage.lastInput.toLocaleString()} token，`
+          + `接近你设置的上限 ${config.contextLimit.toLocaleString()}。`
+          + `继续下去可能会被截断 —— 建议点「新对话」重新开始。`,
+      });
+    }
 
     if (!result.toolCalls.length) {
       if (result.stopReason === 'max_tokens') {
@@ -641,6 +756,7 @@ async function loadConfig() {
   }
   cfg.maxTokens = Number(cfg.maxTokens) || DEFAULTS.maxTokens;
   cfg.maxSteps = Number(cfg.maxSteps) || DEFAULTS.maxSteps;
+  cfg.contextLimit = Number(cfg.contextLimit) || 0;   // 0 = 不预警
   return cfg;
 }
 

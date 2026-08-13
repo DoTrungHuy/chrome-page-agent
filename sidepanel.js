@@ -11,6 +11,7 @@ const form = document.getElementById('composer');
 const sendBtn = document.getElementById('send');
 const stopBtn = document.getElementById('stop');
 const stepEl = document.getElementById('step');
+const usageEl = document.getElementById('usage');
 const ctxEl = document.getElementById('context');
 const ctxTitle = document.getElementById('ctxTitle');
 const ctxUrl = document.getElementById('ctxUrl');
@@ -105,6 +106,28 @@ function onMessage(msg) {
       stepEl.textContent = `第 ${msg.step}/${msg.max} 步`;
       break;
 
+    case 'usage':
+      renderUsage(msg);
+      break;
+
+    case 'rewind':
+      // 重新生成：把界面退回到发问之前，再让新内容流进来
+      pendingRenders.clear();
+      bubble = null;
+      thinkBody = null;
+      log.replaceChildren();
+      renderView(msg.view || []);
+      break;
+
+    case 'prefill':
+      // 右键菜单送来的。以「…」结尾的（"就这段提问"）需要你补问题，不自动发送
+      input.value = msg.text;
+      autoGrow();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      if (!msg.text.trimEnd().endsWith('：') && !busy) form.requestSubmit();
+      break;
+
     case 'restored':
       // Service Worker 被回收过，历史是从 storage.session 捞回来的。
       // 静默恢复会让人以为上下文没断，所以明说，同时把内容也画回来。
@@ -172,12 +195,14 @@ function onMessage(msg) {
       thinkBody = null;
       log.replaceChildren();
       ctxEl.hidden = true;
+      usageEl.hidden = true;   // 新对话，用量从头算
       updateSuggests();
       requestProfile();   // 页面可能已经变了，重新取一次画像
       break;
 
     case 'done':
       closeBubble();
+      showActions();
       stepEl.hidden = true;
       setBusy(false);
       break;
@@ -242,6 +267,44 @@ function closeBubble() {
   flushRenders();
   bubble = null;
   thinkBody = null;
+}
+
+/**
+ * 一轮结束后在末尾放「复制 / 重新生成」。
+ * 答得不好只能重打一遍问题，是最容易被抱怨的地方。
+ */
+function showActions() {
+  log.querySelector('.turn-actions')?.remove();
+  const bubbles = [...log.querySelectorAll('.msg.assistant')];
+  if (!bubbles.length) return;
+
+  const row = document.createElement('div');
+  row.className = 'turn-actions';
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'act';
+  copy.textContent = '复制';
+  copy.addEventListener('click', async () => {
+    // 复制整轮的助手文本，而不是只复制最后一个气泡
+    const text = bubbles.map((b) => b.textContent).join('\n\n').trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.textContent = '已复制';
+    } catch {
+      copy.textContent = '复制失败';
+    }
+    setTimeout(() => { copy.textContent = '复制'; }, 1500);
+  });
+
+  const again = document.createElement('button');
+  again.type = 'button';
+  again.className = 'act';
+  again.textContent = '重新生成';
+  again.addEventListener('click', () => { if (!busy) send({ type: 'regenerate' }); });
+
+  row.append(copy, again);
+  log.append(row);
 }
 
 /** 历史恢复用：一次性渲染一整段 Markdown。 */
@@ -352,6 +415,29 @@ function compactArgs(obj) {
 }
 
 function scrollToBottom() { log.scrollTop = log.scrollHeight; }
+
+const kilo = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+
+/**
+ * 头部的用量。输入显示的是**这一轮发出去的整个对话有多长** ——
+ * 那才是衡量离上下文上限还有多远的指标；输出是累计值。
+ * 端点不报 usage（很多兼容端点不支持 stream_options）时整块不显示。
+ */
+function renderUsage(u) {
+  if (!u || (!u.lastInput && !u.output)) { usageEl.hidden = true; return; }
+  usageEl.hidden = false;
+  usageEl.textContent = `↑${kilo(u.lastInput)} ↓${kilo(u.output)}`;
+
+  const pct = u.limit > 0 ? Math.round((u.lastInput / u.limit) * 100) : 0;
+  usageEl.classList.toggle('warn', pct >= 80);
+  usageEl.title =
+    `本轮输入上下文：${u.lastInput.toLocaleString()} token` +
+    (u.limit > 0 ? `（上限 ${u.limit.toLocaleString()}，已用 ${pct}%）` : '') +
+    `\n累计输出：${u.output.toLocaleString()} token` +
+    (u.cacheRead ? `\n缓存命中：${u.cacheRead.toLocaleString()} token` : '') +
+    `\n对话轮次：${u.turns}` +
+    '\n\n上限在设置里配，只用于预警，不影响请求。';
+}
 
 /** 去掉协议和末尾斜杠，长了从中间省略 —— 上下文条只有一行的宽度。 */
 function prettyUrl(url) {
@@ -742,6 +828,7 @@ form.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text || busy) return;
+  log.querySelector('.turn-actions')?.remove();   // 上一轮的操作按钮该收了
   addBlock('msg user', text);
   input.value = '';
   autoGrow();
