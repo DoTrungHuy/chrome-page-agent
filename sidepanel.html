@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Chrome 侧边栏顶部那条标题栏显示的是本页 <title>。
+         用零宽字符让它只剩图标 —— 留空的话 Chrome 可能回退到扩展名。
+         无障碍信息由 header 里 logo 的 aria-label 承担。 -->
+    <title>&#8203;</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header>
+      <span class="logo" role="img" aria-label="Page Agent">
+        <svg viewBox="0 0 28 28" width="26" height="26" aria-hidden="true">
+          <defs>
+            <linearGradient id="zg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#6d94ff" />
+              <stop offset="1" stop-color="#2b52d8" />
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="28" height="28" rx="8.5" fill="url(#zg)" />
+          <path d="M9.5 9.5h9l-9 9h9" fill="none" stroke="#fff" stroke-width="2.6"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </span>
+      <button id="history" class="icon" title="历史对话" aria-label="历史对话">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4" />
+          <path d="M12 8v4l3 2" />
+        </svg>
+      </button>
+      <div class="spacer"></div>
+      <span id="step" class="step" hidden></span>
+      <button id="reset" class="icon" title="新对话" aria-label="新对话">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5.5h10M4 12h7M4 18.5h7" />
+          <path d="M17.5 11v8M13.5 15h8" />
+        </svg>
+      </button>
+      <button id="settings" class="icon" title="设置" aria-label="设置">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+        </svg>
+      </button>
+    </header>
+
+    <main id="log" class="log"></main>
+
+    <!-- 历史对话抽屉 -->
+    <div id="drawer" class="drawer" hidden>
+      <div class="drawer-head">
+        <span>历史对话</span>
+        <div class="spacer"></div>
+        <button id="drawerClose" class="icon" title="关闭" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div id="convList" class="conv-list"></div>
+      <p class="drawer-note">
+        为了不把浏览过的页面内容写进磁盘，历史里只保留你的提问、模型的回答和工具调用摘要，
+        页面快照不落盘。
+      </p>
+    </div>
+
+    <div class="dock">
+      <!-- 建议区：只在对话为空时出现，紧贴输入区上方（同原图布局） -->
+      <div id="suggests" class="suggests">
+        <div id="suggestHint" class="suggest-hint"></div>
+        <div id="cards" class="cards"></div>
+      </div>
+
+      <!-- 上下文卡与输入框是同一块，中间用分隔线 -->
+      <form id="composer" class="composer">
+        <div id="context" class="ctx" hidden>
+          <svg class="ctx-ic" viewBox="0 0 24 24" width="13" height="13" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+            <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+          </svg>
+          <span id="ctxTitle" class="ctx-title"></span>
+          <span id="ctxUrl" class="ctx-url"></span>
+        </div>
+
+        <textarea id="input" rows="1" placeholder="问点什么，或让我操作这个页面"></textarea>
+
+        <div class="bar">
+          <button id="mention" class="tool-btn" type="button"
+                  title="插入你在页面上选中的文字" aria-label="插入选中的文字">@</button>
+          <select id="modeSel" class="pill mode" title="模式（Shift+Tab 循环切换）">
+            <option value="plan">Plan</option>
+            <option value="auto" selected>Auto</option>
+            <option value="always">Always</option>
+          </select>
+          <div class="picker">
+            <button id="modelBtn" class="pill pill-btn" type="button"
+                    aria-haspopup="listbox" aria-expanded="false" title="切换模型配置">
+              <span id="modelDot" class="dot"></span>
+              <span id="modelName">未配置</span>
+              <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor"
+                   stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <div id="modelMenu" class="menu" hidden role="listbox"></div>
+          </div>
+          <div class="spacer"></div>
+          <button id="send" type="submit" class="circle" title="发送 (Enter)" aria-label="发送">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+          </button>
+          <button id="stop" type="button" class="circle danger" hidden title="停止" aria-label="停止">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2.5" />
+            </svg>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

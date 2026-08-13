@@ -1,0 +1,49 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local AI/agent tooling and instructions
+.claude/
+.claude-*
+claude/
+claude*
+Claude*
+CLAUDE*
+CLAUDE.md
+**/CLAUDE.md
+.cursor/
+.codex/
+.windsurf/
+.aider*
+.continue/
+AGENTS.local.md
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Dependencies, caches, logs, and coverage
+node_modules/
+.cache/
+coverage/
+*.log
+
+# Generated extension packages
+dist/
+build/
+*.zip
+*.crx
+*.tgz

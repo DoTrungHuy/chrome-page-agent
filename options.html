@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Page Agent 设置</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #eef1f7; --surface: #fff; --fg: #1a1d24; --muted: #7c8494;
+        --line: rgba(20,25,40,.1); --accent: #3b6cf6; --danger: #e5484d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #14161b; --surface: #1d2027; --fg: #e9ebf0; --muted: #868d9c;
+                --line: rgba(255,255,255,.1); --accent: #7d9dff; --danger: #ff6369; }
+      }
+      * { box-sizing: border-box; }
+      body {
+        max-width: 720px; margin: 0 auto; padding: 34px 22px 80px;
+        background: var(--bg); color: var(--fg);
+        font: 14px/1.65 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+      h2 { font-size: 14px; margin: 26px 0 10px; }
+      .card {
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 14px; padding: 16px 18px; margin-bottom: 10px;
+      }
+      .card.active { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+      .row { display: flex; gap: 12px; }
+      .row > * { flex: 1; min-width: 0; }
+      label { display: block; margin-top: 12px; font-size: 12.5px; font-weight: 550; color: var(--muted); }
+      label:first-child { margin-top: 0; }
+      input, select, textarea {
+        width: 100%; margin-top: 5px; padding: 8px 10px;
+        border: 1px solid var(--line); border-radius: 9px;
+        background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+      }
+      input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+      .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+      .head .nm { flex: 1; font-weight: 650; font-size: 14px; }
+      .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px;
+             background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+      button { font: inherit; cursor: pointer; border-radius: 9px; }
+      .mini { padding: 4px 10px; font-size: 12px; border: 1px solid var(--line);
+              background: var(--bg); color: var(--muted); }
+      .mini:hover { color: var(--fg); }
+      .mini.del:hover { color: var(--danger); border-color: var(--danger); }
+      .add { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+      .add select { flex: 1; }
+      .primary { padding: 9px 22px; border: none; background: var(--accent); color: #fff; font-weight: 600; }
+      .bar { position: sticky; bottom: 0; margin-top: 24px; padding: 14px 0;
+             background: linear-gradient(transparent, var(--bg) 30%); display: flex; align-items: center; gap: 12px; }
+      #status { color: #2f9e6e; font-size: 13px; }
+      .warn { background: color-mix(in srgb, #f5a524 16%, transparent);
+              border-left: 3px solid #f5a524; padding: 11px 15px; border-radius: 8px;
+              font-size: 12.5px; margin-top: 18px; }
+      code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+      .empty { color: var(--muted); font-size: 13px; padding: 6px 0 2px; }
+
+      /* 模型是账号下的一串标签，点一下设为当前 —— 不用为每个模型复制一遍地址和密钥 */
+      .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; align-items: center; }
+      .chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px;
+        background: var(--bg); font-size: 12.5px; cursor: pointer; color: var(--fg);
+      }
+      .chip:hover { border-color: var(--muted); }
+      .chip.on {
+        background: color-mix(in srgb, var(--accent) 13%, transparent);
+        border-color: transparent; color: var(--accent); font-weight: 600;
+      }
+      .chip .x { color: var(--muted); font-size: 14px; line-height: 1; padding: 0 1px; }
+      .chip .x:hover { color: var(--danger); }
+      .chip-add {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 4px 8px; border: 1px dashed var(--line); border-radius: 999px;
+      }
+      .chip-add input {
+        width: 150px; margin: 0; padding: 2px 4px; border: none;
+        background: transparent; font-size: 12.5px;
+      }
+      .chip-add input:focus { outline: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Page Agent 设置</h1>
+    <p class="sub">
+      一个「账号」= 接口格式 + Base URL + API Key，下面挂着这个账号能用的模型。
+      同一家的多个模型共用一套地址和密钥，不用重复填。
+      点模型标签设为当前；侧边栏底部的胶囊也能直接切。
+    </p>
+
+    <h2>账号与模型</h2>
+    <div id="accounts"></div>
+    <div class="add">
+      <select id="presetPick">
+        <option value="">从预设添加账号…</option>
+      </select>
+      <button id="addBlank" class="mini" type="button">+ 空白账号</button>
+    </div>
+
+    <h2>运行参数</h2>
+    <div class="card">
+      <div class="row">
+        <label>
+          最大输出 token
+          <input id="maxTokens" type="number" min="1024" step="1024" />
+        </label>
+        <label>
+          最大步数
+          <input id="maxSteps" type="number" min="1" max="50" />
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          temperature（留空不发送）
+          <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="（不发送）" />
+        </label>
+        <label>
+          token 参数名（仅 OpenAI 兼容格式）
+          <select id="tokenParam">
+            <option value="max_tokens">max_tokens（默认）</option>
+            <option value="max_completion_tokens">max_completion_tokens</option>
+          </select>
+        </label>
+      </div>
+      <p style="margin:12px 0 0;font-size:12px;color:var(--muted)">
+        最大输出 token 含推理 token，设小了会被截断。部分推理模型不接受 temperature，留空最安全；
+        OpenAI 新一代推理模型（o 系列、gpt-5）只认 <code>max_completion_tokens</code>。
+      </p>
+    </div>
+
+    <p class="warn">
+      <strong>安全提示：</strong>API Key 保存在 <code>chrome.storage.local</code>，对本机用户是明文可读的。
+      自己用没问题；要分发给别人请改成自建后端代理，别让密钥进到扩展里。
+    </p>
+
+    <div class="bar">
+      <button id="save" class="primary" type="button">保存</button>
+      <span id="status"></span>
+    </div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
