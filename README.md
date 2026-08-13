@@ -22,6 +22,39 @@
 需要 Chrome 116+。装好后它会一直在，重启浏览器也在；只是 Chrome 每次启动会提示
 一句「已停用开发者模式扩展程序」，点「保留」即可，不影响使用。
 
+## 测试
+
+```bash
+npm test
+```
+
+**全程在本地跑，不访问网络。** 端到端测试会启动一个临时 profile 的 Chrome、
+用 CDP 把扩展装进去、在 localhost 上起假的模型服务，然后驱动整条链路。
+
+| 命令 | 跑什么 |
+|---|---|
+| `npm test` | 全部 11 套 |
+| `npm run test:unit` | 只跑单元测试（不需要 Chrome，秒回） |
+| `npm run test:e2e` | 只跑端到端 |
+| `node tests/run.mjs modes` | 按关键词筛选套件 |
+| `node tests/run.mjs modes -v` | 附完整输出，排查失败时用 |
+
+找不到 Chrome 的话设置 `CHROME_PATH` 环境变量指向可执行文件。端口全部动态分配。
+
+| 套件 | 覆盖 |
+|---|---|
+| `unit/providers` | 两种 wire format 的 SSE 解析、并行工具调用、历史回填结构、参数 JSON 解析失败 |
+| `unit/markdown` | 渲染结构、链接协议白名单、HTML 注入、**递归正则死循环回归** |
+| `e2e/snapshot` | 可见性过滤、可访问名、`display:contents`、行内合并、截断、按 ref 操作 |
+| `e2e/core` | 设置页、侧边栏 UI、各工具真实派发、步数上限、中断、配置缺失、Anthropic |
+| `e2e/modes` | Plan/Auto/Always 权限门禁、确认流程、模型配置切换器 |
+| `e2e/history` | 自动存档、恢复、删除、**页面快照不落盘** |
+| `e2e/context` | 当前页面进提示、过期快照压缩、提示注入标记、缓存断点位置 |
+| `e2e/nopage` | 新标签页 / `chrome://` 上照常对话 |
+| `e2e/resilience` | 并行工具调用、Service Worker 回收后恢复、面板重开 |
+| `e2e/typing` | 受控输入框的原生 setter + 事件派发 + 表单提交 |
+| `e2e/package` | 打包产物的 zip 结构与条目清单 |
+
 ## 打包与上架
 
 ```bash
