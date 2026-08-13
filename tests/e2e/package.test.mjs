@@ -14,7 +14,9 @@ const s = suite('package');
 
 const manifest = JSON.parse(readFileSync(join(REPO, 'manifest.json'), 'utf8'));
 const ZIP = join(REPO, `page-agent-v${manifest.version}.zip`);
+const OPERA_ZIP = join(REPO, `page-agent-v${manifest.version}-opera.zip`);
 if (existsSync(ZIP)) rmSync(ZIP);
+if (existsSync(OPERA_ZIP)) rmSync(OPERA_ZIP);
 
 s.section('打包');
 execFileSync(process.execPath, [join(REPO, 'pack.mjs')], { cwd: REPO, stdio: 'pipe' });
@@ -64,7 +66,7 @@ const REQUIRED = [
   'manifest.json', 'background.js', 'content.js',
   'sidepanel.html', 'sidepanel.css', 'sidepanel.js',
   'options.html', 'options.js',
-  'lib/providers.js', 'lib/sse.js', 'lib/tools.js', 'lib/markdown.js',
+  'lib/api.js', 'lib/providers.js', 'lib/sse.js', 'lib/tools.js', 'lib/markdown.js',
   'icons/icon16.png', 'icons/icon32.png', 'icons/icon48.png', 'icons/icon128.png',
 ];
 for (const f of REQUIRED) s.t(`包含 ${f}`, names.includes(f));
@@ -84,5 +86,14 @@ s.t('manifest 声明了图标', Object.keys(manifest.icons || {}).includes('128'
 s.t('action 声明了图标', Object.keys(manifest.action?.default_icon || {}).includes('128'));
 s.t('声明了最低 Chrome 版本', !!manifest.minimum_chrome_version);
 s.t('有 homepage_url（商店和扩展详情页会显示）', !!manifest.homepage_url, JSON.stringify(manifest.homepage_url));
+
+s.section('Opera 打包');
+execFileSync(process.execPath, [join(REPO, 'pack.mjs'), 'opera'], { cwd: REPO, stdio: 'pipe' });
+s.t('pack.mjs opera 产出 Opera zip', existsSync(OPERA_ZIP), OPERA_ZIP);
+const operaEntries = zipEntries(OPERA_ZIP);
+const operaNames = operaEntries.map((e) => e.name).sort();
+s.t('Opera zip 解压后第一层是 manifest.json', operaNames.includes('manifest.json'));
+s.t('Opera zip 不包含 manifest.opera.json 源文件名', !operaNames.includes('manifest.opera.json'));
+s.t('Opera zip 包含 sidepanel.html', operaNames.includes('sidepanel.html'));
 
 s.done();

@@ -1,4 +1,4 @@
-// 注入到页面里运行。通过 chrome.scripting.executeScript 以 classic script 加载，
+// 注入到页面里运行。通过 scripting.executeScript 以 classic script 加载，
 // 所以这里不能用 import/export。
 //
 // 职责：
@@ -9,6 +9,8 @@
 // 这是刻意的 —— 页面一变旧编号就没意义，与其让模型点错，不如明确报错让它重读。
 
 (() => {
+  const api = globalThis.browser ?? globalThis.chrome;
+
   // 幂等守卫：重复注入不会重复注册监听器
   if (window.__pageAgentInstalled) return;
   window.__pageAgentInstalled = true;
@@ -22,7 +24,7 @@
 
   // ── 消息入口 ────────────────────────────────────────────────────
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
         sendResponse({ ok: true, data: await handle(msg) });

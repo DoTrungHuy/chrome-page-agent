@@ -1,9 +1,9 @@
 {
   "name": "chrome-page-agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
-  "description": "Chrome 侧边栏 AI 助手：读懂并操作当前网页。支持任意大模型 API。",
+  "description": "跨浏览器侧边栏 AI 助手：读懂并操作当前网页。支持任意大模型 API。",
   "homepage": "https://github.com/DoTrungHuy/chrome-page-agent",
   "license": "MIT",
   "engines": {
@@ -13,6 +13,8 @@
     "test": "node tests/run.mjs",
     "test:unit": "node tests/run.mjs unit",
     "test:e2e": "node tests/run.mjs e2e",
-    "pack": "node pack.mjs"
+    "pack": "node pack.mjs",
+    "pack:chromium": "node pack.mjs chromium",
+    "pack:opera": "node pack.mjs opera"
   }
 }

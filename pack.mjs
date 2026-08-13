@@ -1,4 +1,7 @@
-// 打包成可上传 Chrome 应用商店的 zip。用法：node pack.mjs
+// 打包浏览器扩展 zip。
+//   node pack.mjs              -> Chromium 包（Chrome / Edge / Vivaldi / Brave）
+//   node pack.mjs chromium     -> 同上
+//   node pack.mjs opera        -> Opera 专用包
 //
 // 两个常见的上传被拒原因，这里都规避掉了：
 //   1. 压缩包里套了一层文件夹 —— 必须解开就是 manifest.json
@@ -10,12 +13,20 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, relative, sep } from 'node:path';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
-const OUT = join(ROOT, `page-agent-v${manifest.version}.zip`);
+const target = process.argv[2] || 'chromium';
+if (!['chromium', 'opera'].includes(target)) {
+  console.error(`不支持的目标：${target}。可选目标：chromium、opera`);
+  process.exit(1);
+}
+
+const manifestSource = target === 'opera' ? 'manifest.opera.json' : 'manifest.json';
+const manifest = JSON.parse(readFileSync(join(ROOT, manifestSource), 'utf8'));
+const suffix = target === 'opera' ? '-opera' : '';
+const OUT = join(ROOT, `page-agent-v${manifest.version}${suffix}.zip`);
 
 // 只打包运行时真正需要的东西；文档、测试、打包脚本自己都不进包
 const INCLUDE = [
-  'manifest.json',
+  manifestSource,
   'background.js',
   'content.js',
   'sidepanel.html', 'sidepanel.css', 'sidepanel.js',
@@ -41,7 +52,12 @@ for (const entry of INCLUDE) {
     process.exit(1);
   }
   for (const f of walk(abs)) {
-    files.push({ abs, name: relative(ROOT, f).split(sep).join('/'), path: f });
+    const sourceName = relative(ROOT, f).split(sep).join('/');
+    files.push({
+      abs,
+      name: sourceName === manifestSource ? 'manifest.json' : sourceName,
+      path: f,
+    });
   }
 }
 
@@ -119,6 +135,8 @@ end.writeUInt32LE(offset, 16);
 
 writeFileSync(OUT, Buffer.concat([...chunks, centralBuf, end]));
 
+console.log(`目标：${target}`);
+console.log(`清单：${manifestSource} -> manifest.json`);
 console.log(`打好了：${OUT}  (${(statSync(OUT).size / 1024).toFixed(1)} KB, ${files.length} 个文件)`);
 console.log('\n上传前自查：');
 console.log('  · 解压后第一层就是 manifest.json（不能套文件夹）✓ 本脚本已保证');

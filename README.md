@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/DoTrungHuy/chrome-page-agent/releases"><img src="https://img.shields.io/github/v/release/DoTrungHuy/chrome-page-agent?include_prereleases&label=release" alt="Release"></a>
   <a href="https://github.com/DoTrungHuy/chrome-page-agent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/DoTrungHuy/chrome-page-agent" alt="License"></a>
-  <img src="https://img.shields.io/badge/Chrome-116%2B-4285F4" alt="Chrome 116+"><!--
+  <img src="https://img.shields.io/badge/Chromium-116%2B-4285F4" alt="Chromium 116+"><!--
   --><img src="https://img.shields.io/badge/Manifest-V3-34A853" alt="Manifest V3">
 </p>
 
@@ -31,15 +31,15 @@
 
 ### 1. 安装扩展
 
-需要 **Chrome 116 或更高版本**。
+Chromium 版本需要 **Chrome 116 或更高版本**；Edge、Vivaldi 和 Brave 请使用支持 Side Panel API 的较新版本。Opera 使用单独的 Opera 包。
 
 你可以选择以下任一种方式：
 
 **方式 A：下载 Release ZIP**
 
 1. 打开 [Releases](https://github.com/DoTrungHuy/chrome-page-agent/releases)。
-2. 下载最新的 `page-agent-*.zip` 并解压到一个固定文件夹。
-3. 打开 `chrome://extensions`。
+2. Chrome、Edge、Vivaldi、Brave 下载普通的 `page-agent-v*.zip`；Opera 下载带 `-opera` 后缀的 ZIP，然后解压到一个固定文件夹。
+3. 打开对应的扩展管理页：`chrome://extensions`、`edge://extensions`、`vivaldi://extensions`、`brave://extensions` 或 `opera://extensions`。
 4. 打开右上角的「开发者模式」。
 5. 点击「加载未打包的扩展程序」，选择解压后的文件夹。
 
@@ -49,7 +49,9 @@
 git clone https://github.com/DoTrungHuy/chrome-page-agent.git
 ```
 
-然后在 `chrome://extensions` 中加载仓库根目录。这个项目没有构建步骤，源码目录本身就是可加载的扩展目录。
+然后在 Chrome、Edge、Vivaldi 或 Brave 的扩展管理页中加载仓库根目录。Opera 请先运行 `npm run pack:opera`，再加载解压后的 Opera ZIP；这是因为 Opera 的侧边栏清单和 Chromium 不同。
+
+Opera 的右键菜单可以先把文字放入待处理队列；如果侧边栏没有自动展开，点击 Opera 侧边栏里的 Page Agent 图标即可看到预填内容。
 
 ### 2. 配置模型
 
@@ -117,7 +119,7 @@ git clone https://github.com/DoTrungHuy/chrome-page-agent.git
 
 这类扩展能看到网页，也能执行网页操作。请把下面几条当作使用前提：
 
-- **API Key 不会写进仓库或 ZIP。** 设置页填写的 Key 保存在本机 Chrome 的 `chrome.storage.local` 中；对自己的电脑方便，但不是硬件安全存储。
+- **API Key 不会写进仓库或 ZIP。** 设置页填写的 Key 保存在当前浏览器的扩展本地存储中；对自己的电脑方便，但不是硬件安全存储。
 - **页面内容会发送给你配置的模型服务。** 不要在不信任的服务上处理密码、身份证号、支付信息或其他敏感内容。
 - **网页内容不是指令。** 页面正文会被明确包在内容边界中，提示词注入会被标记；但这不是绝对防护。
 - **高风险页面请使用「计划」或「自动」模式。** 不要在付款、删除、发消息、改账号设置的页面上使用「放手跑」。
@@ -133,7 +135,7 @@ flowchart LR
     SW --> L[模型服务\nAnthropic / OpenAI 兼容]
     SW --> CS[Content Script\n读取与操作网页]
     CS --> TAB[当前网页]
-    SW --> S[(Chrome Storage\n会话与历史)]
+    SW --> S[(Browser Extension Storage\n会话与历史)]
 ```
 
 页面快照不是简单的 `innerText`：`content.js` 会过滤不可见元素，为可交互元素生成引用编号。例如：
@@ -155,7 +157,7 @@ text "共找到 128 件商品"
 
 ## 🧪 测试与打包
 
-测试全程在本地运行，不访问真实模型服务：端到端测试会启动临时 Chrome、加载扩展，并在 localhost 上运行假的模型服务。
+测试全程在本地运行，不访问真实模型服务：端到端测试会启动临时 Chromium 浏览器、加载扩展，并在 localhost 上运行假的模型服务。
 
 ```bash
 # 全部测试
@@ -173,11 +175,17 @@ node tests/run.mjs modes
 # 需要完整输出时
 node tests/run.mjs modes -v
 
-# 生成可分发 ZIP
+# 生成 Chromium 浏览器包
 node pack.mjs
+
+# 或者显式指定目标
+npm run pack:chromium
+
+# 生成 Opera 专用包
+npm run pack:opera
 ```
 
-PowerShell 如果拦截了 `npm.ps1`，可以使用对应的 `npm.cmd` 命令。找不到 Chrome 时，设置 `CHROME_PATH` 指向 Chrome 可执行文件。
+PowerShell 如果拦截了 `npm.ps1`，可以使用对应的 `npm.cmd` 命令。端到端测试默认寻找 Chrome；如需测试其他 Chromium 浏览器，可设置 `CHROME_PATH` 指向对应可执行文件。
 
 当前测试覆盖：
 
@@ -188,14 +196,16 @@ PowerShell 如果拦截了 `npm.ps1`，可以使用对应的 `npm.cmd` 命令。
 - 多供应商历史会话保护
 - Service Worker 回收后的会话恢复
 - 新标签页导航、输入框事件和表单提交
-- ZIP 结构、文件清单和扩展 manifest
+- ZIP 结构、文件清单和 Chromium / Opera 两套扩展 manifest
 
 ## 📦 项目结构
 
 ```text
-manifest.json      Chrome MV3 清单
+manifest.json      Chromium MV3 清单（Chrome / Edge / Vivaldi / Brave）
+manifest.opera.json Opera MV3 清单（打包时写入为 manifest.json）
 background.js      Service Worker：小Z Agent、模型请求、会话与权限
 content.js         页面注入：DOM 快照、点击、输入、滚动
+lib/api.js         WebExtension API 兼容层与侧边栏打开适配
 lib/providers.js   供应商适配层
 lib/tools.js       工具定义与页面工具派发
 lib/sse.js         SSE 流解析
@@ -210,15 +220,21 @@ PLAN.md            设计与演进记录
 
 ## 🌐 浏览器兼容性
 
-- **Chrome**：主要目标，要求 Chrome 116+。
-- **Edge**：MV3 基本兼容，同一个 ZIP 可作为起点测试。
-- **Firefox**：需要改造 `chrome.*`、Service Worker、侧边栏 API 和权限模型，当前不保证可用。
+| 浏览器 | 使用的包 | 侧边栏实现 | 当前状态 |
+|---|---|---|---|
+| Chrome 116+ | Chromium ZIP | `side_panel` / `chrome.sidePanel` | 本机 E2E 已验证 |
+| Edge | Chromium ZIP | `side_panel` / `chrome.sidePanel` | 使用 Chromium API；建议按本机版本冒烟测试 |
+| Vivaldi | Chromium ZIP | `side_panel` / `chrome.sidePanel` | 使用 Chromium API；建议按本机版本冒烟测试 |
+| Brave | Chromium ZIP | `side_panel` / `chrome.sidePanel` | 使用 Chrome 扩展 API；建议按本机版本冒烟测试 |
+| Opera | Opera ZIP | `sidebar_action` / `opr.sidebarAction` | 使用独立清单；建议按本机版本冒烟测试 |
+
+Chromium 包和 Opera 包不能混用：Opera 的原生侧边栏 API 与 Chrome Side Panel API 不同。项目的运行时代码通过 `lib/api.js` 统一常用扩展 API；打包时再根据目标选择侧边栏清单。
 
 ## ⚠️ 当前限制
 
 - 不读取 iframe 内容；跨域 iframe 通常也无法访问。
 - 不提供真正的视觉理解，canvas 或纯图片按钮识别有限。
-- 无法在 `chrome://`、扩展页、Chrome 应用商店页面上注入读取脚本。
+- 无法在浏览器内部页面、扩展页或应用商店页面上注入读取脚本，例如 `chrome://`、`edge://`、`brave://`、`vivaldi://` 和 `opera://`。
 - 当前一次只围绕一个活动标签页工作，不能跨标签页协同。
 - 模型服务的工具调用质量取决于具体模型；本地小模型可能需要调整模型或参数。
 
