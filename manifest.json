@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Page Agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "侧边栏 AI 助手：读懂并操作当前网页。支持任意大模型 API。",
   "minimum_chrome_version": "116",
   "homepage_url": "https://github.com/DoTrungHuy/chrome-page-agent",
