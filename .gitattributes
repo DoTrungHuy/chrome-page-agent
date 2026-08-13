@@ -1,0 +1,9 @@
+# 统一用 LF 存储，检出时按平台展开。
+# 不然 Windows 上写的 CRLF 会让 Mac/Linux 上 clone 出整文件 diff。
+* text=auto eol=lf
+
+# 二进制，别碰
+*.png binary
+*.zip binary
+*.crx binary
+*.pem binary
