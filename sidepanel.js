@@ -4,6 +4,7 @@
 // 一个恶意页面就能把脚本注进扩展的特权上下文里。
 
 import { renderMarkdown } from './lib/markdown.js';
+import { api } from './lib/api.js';
 
 const log = document.getElementById('log');
 const input = document.getElementById('input');
@@ -39,7 +40,7 @@ let busy = false;
 
 function connect() {
   if (port) return port;
-  port = chrome.runtime.connect({ name: 'agent' });
+  port = api.runtime.connect({ name: 'agent' });
   port.onMessage.addListener(onMessage);
   port.onDisconnect.addListener(() => {
     // Service Worker 被回收会走到这里；下次发消息时自动重连
@@ -77,7 +78,7 @@ const NEEDED_FEATURES = ['conversations', 'profile', 'selection', 'modes'];
 let backendOk = false;
 
 function staleBackendMsg() {
-  return '后台代码还是旧版本。请到 chrome://extensions 找到 Page Agent，' +
+  return '后台代码还是旧版本。请打开浏览器的扩展管理页，找到 Page Agent，' +
          '点卡片上的刷新按钮 ⟳，然后关掉侧边栏重新打开。';
 }
 
@@ -526,7 +527,7 @@ document.getElementById('history').addEventListener('click', () => {
   clearTimeout(convTimer);
   convTimer = setTimeout(() => {
     loading.textContent = backendOk
-      ? '后台没有响应。关掉侧边栏重新打开再试；还不行就到 chrome://extensions 点刷新 ⟳。'
+      ? '后台没有响应。关掉侧边栏重新打开再试；还不行就到浏览器的扩展管理页点刷新 ⟳。'
       : staleBackendMsg();
   }, 2500);
 
@@ -656,8 +657,8 @@ function requestProfile() {
   profileTimer = setTimeout(() => send({ type: 'profile' }), 250);
 }
 
-chrome.tabs.onActivated.addListener(requestProfile);
-chrome.tabs.onUpdated.addListener((_id, info) => { if (info.status === 'complete') requestProfile(); });
+api.tabs.onActivated.addListener(requestProfile);
+api.tabs.onUpdated.addListener((_id, info) => { if (info.status === 'complete') requestProfile(); });
 
 // ── 模式与模型 ─────────────────────────────────────────────────
 
@@ -670,7 +671,7 @@ function setMode(mode, notify = true) {
     mode === 'always' ? '不会再弹确认，直接执行' :
     '问点什么，或让我操作这个页面';
   if (notify) send({ type: 'mode', mode });
-  chrome.storage.local.set({ mode });
+  api.storage.local.set({ mode });
   renderCards();
 }
 
@@ -688,7 +689,7 @@ document.addEventListener('keydown', (e) => {
 
 async function loadModels() {
   const { accounts = [], activeAccount = '', model = '', provider = '' } =
-    await chrome.storage.local.get(['accounts', 'activeAccount', 'model', 'provider']);
+    await api.storage.local.get(['accounts', 'activeAccount', 'model', 'provider']);
 
   const active = accounts.find((a) => a.id === activeAccount);
   modelName.textContent = model || '未配置';
@@ -767,16 +768,16 @@ modelBtn.addEventListener('click', (e) => {
 modelMenu.addEventListener('click', async (e) => {
   if (e.target.closest('#manageProfiles')) {
     closeMenu();
-    chrome.runtime.openOptionsPage();
+    api.runtime.openOptionsPage();
     return;
   }
   const row = e.target.closest('.menu-row');
   if (!row) return;
-  const { accounts = [] } = await chrome.storage.local.get('accounts');
+  const { accounts = [] } = await api.storage.local.get('accounts');
   const acc = accounts.find((a) => a.id === row.dataset.account);
   if (!acc) return;
   // 选中的模型 + 它所属账号的地址密钥，一起写进生效配置
-  await chrome.storage.local.set({
+  await api.storage.local.set({
     activeAccount: acc.id,
     provider: acc.provider,
     baseUrl: acc.baseUrl,
@@ -793,7 +794,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !modelMenu.hidden) closeMenu();
 });
 
-chrome.storage.onChanged.addListener((ch) => {
+api.storage.onChanged.addListener((ch) => {
   if (ch.accounts || ch.activeAccount || ch.model || ch.provider) loadModels();
 });
 
@@ -839,7 +840,7 @@ form.addEventListener('submit', (e) => {
 
 stopBtn.addEventListener('click', () => send({ type: 'abort' }));
 document.getElementById('reset').addEventListener('click', () => send({ type: 'reset' }));
-document.getElementById('settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
+document.getElementById('settings').addEventListener('click', () => api.runtime.openOptionsPage());
 
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -865,7 +866,7 @@ function autoGrow() {
 send({ type: 'ping' });
 setTimeout(() => { if (!backendOk) addBlock('msg error', staleBackendMsg()); }, 2500);
 
-chrome.storage.local.get('mode').then((c) => setMode(c.mode || 'auto', false));
+api.storage.local.get('mode').then((c) => setMode(c.mode || 'auto', false));
 loadModels();
 renderCards();
 updateSuggests();

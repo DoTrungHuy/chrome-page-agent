@@ -2,20 +2,18 @@
   "manifest_version": 3,
   "name": "Page Agent",
   "version": "0.1.2",
-  "description": "侧边栏 AI 助手：读懂并操作当前网页。支持任意大模型 API。",
-  "minimum_chrome_version": "116",
+  "description": "Opera 侧边栏 AI 助手：读懂并操作当前网页。支持任意大模型 API。",
   "homepage_url": "https://github.com/DoTrungHuy/chrome-page-agent",
 
   "permissions": [
     "storage",
     "tabs",
     "scripting",
-    "sidePanel",
     "contextMenus"
   ],
 
   "commands": {
-    "_execute_action": {
+    "_execute_sidebar_action": {
       "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" },
       "description": "打开 Page Agent 侧边栏"
     }
@@ -31,8 +29,10 @@
     "type": "module"
   },
 
-  "side_panel": {
-    "default_path": "sidepanel.html"
+  "sidebar_action": {
+    "default_panel": "sidepanel.html",
+    "default_title": "打开 Page Agent",
+    "default_icon": "icons/icon128.png"
   },
 
   "options_page": "options.html",

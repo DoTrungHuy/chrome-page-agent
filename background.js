@@ -7,6 +7,7 @@
 // 进行中的 fetch 都能续命，所以一次任务跑到底不会被中断；但会话历史
 // 是挂在 port 上的内存对象，关掉侧边栏就清空 —— 这符合预期。
 
+import { api, openPanel } from './lib/api.js';
 import { PROVIDERS } from './lib/providers.js';
 import {
   TOOL_DEFS, runTool, ensureContentScript, assertInjectable, assessRisk,
@@ -29,7 +30,7 @@ const DEFAULTS = {
 // 只读工具：计划模式下只暴露这几个，模型想点也点不了
 const READONLY_TOOLS = new Set(['read_page', 'scroll', 'wait']);
 
-// 当前会话存在 chrome.storage.session（随浏览器会话存活、不落盘）。
+// 当前会话存在 WebExtension storage.session（随浏览器会话存活、不落盘）。
 // 放内存里的话，MV3 的 Service Worker 空闲 30 秒被回收，用户会在毫无提示的
 // 情况下失去上下文 —— 聊到第五轮突然失忆。
 const SESSION_KEY = 'chat';
@@ -82,7 +83,7 @@ async function saveConversation(session) {
   const first = session.view.find((v) => v.role === 'user');
   const title = (first?.text || '新对话').replace(/\s+/g, ' ').trim().slice(0, 60);
 
-  await chrome.storage.local.set({
+  await api.storage.local.set({
     [CONV_KEY(session.convId)]: {
       id: session.convId,
       title,
@@ -94,15 +95,15 @@ async function saveConversation(session) {
     },
   });
 
-  const { [CONV_INDEX]: index = [] } = await chrome.storage.local.get(CONV_INDEX);
+  const { [CONV_INDEX]: index = [] } = await api.storage.local.get(CONV_INDEX);
   const rest = index.filter((c) => c.id !== session.convId);
   rest.unshift({ id: session.convId, title, origin: session.origin || '', updatedAt: now });
 
   // 超出上限就淘汰最旧的，连同它的正文一起删掉，别留孤儿
   const kept = rest.slice(0, MAX_CONVERSATIONS);
   const dropped = rest.slice(MAX_CONVERSATIONS);
-  if (dropped.length) await chrome.storage.local.remove(dropped.map((c) => CONV_KEY(c.id)));
-  await chrome.storage.local.set({ [CONV_INDEX]: kept });
+  if (dropped.length) await api.storage.local.remove(dropped.map((c) => CONV_KEY(c.id)));
+  await api.storage.local.set({ [CONV_INDEX]: kept });
 }
 
 const newConvId = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -246,25 +247,25 @@ const MENUS = [
   { id: 'ask', title: '就「%s」提问…', template: (t) => `关于这段内容：\n\n「${t}」\n\n我的问题是：` },
 ];
 
-chrome.runtime.onInstalled.addListener(() => {
+api.runtime.onInstalled.addListener(() => {
   // 点扩展图标直接开侧边栏
-  chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  api.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
-  chrome.contextMenus.removeAll(() => {
+  api.contextMenus.removeAll(() => {
     for (const m of MENUS) {
-      chrome.contextMenus.create({ id: m.id, title: m.title, contexts: ['selection'] });
+      api.contextMenus.create({ id: m.id, title: m.title, contexts: ['selection'] });
     }
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+api.contextMenus.onClicked.addListener(async (info, tab) => {
   const menu = MENUS.find((m) => m.id === info.menuItemId);
   if (!menu || !info.selectionText) return;
   const text = menu.template(info.selectionText.trim().slice(0, 2000));
 
   // 右键菜单的点击本身算用户手势，可以直接开侧边栏
   try {
-    if (tab?.windowId != null) await chrome.sidePanel.open({ windowId: tab.windowId });
+    if (tab?.windowId != null) await openPanel({ windowId: tab.windowId });
   } catch { /* 面板可能已经开着 */ }
 
   if (openPorts.size) {
@@ -272,19 +273,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     for (const p of openPorts) post(p, { type: 'prefill', text });
   } else {
     // 面板还在加载，先存着，它连上来时自己取
-    await chrome.storage.session.set({ [PENDING_KEY]: text });
+    await api.storage.session.set({ [PENDING_KEY]: text });
   }
 });
 
-chrome.runtime.onConnect.addListener((port) => {
+api.runtime.onConnect.addListener((port) => {
   if (port.name !== 'agent') return;
   openPorts.add(port);
 
   // 右键菜单在面板打开之前就点了的话，文字存在这里，现在取出来
-  chrome.storage.session.get(PENDING_KEY).then((r) => {
+  api.storage.session.get(PENDING_KEY).then((r) => {
     if (r[PENDING_KEY]) {
       post(port, { type: 'prefill', text: r[PENDING_KEY] });
-      chrome.storage.session.remove(PENDING_KEY);
+      api.storage.session.remove(PENDING_KEY);
     }
   });
 
@@ -307,7 +308,7 @@ chrome.runtime.onConnect.addListener((port) => {
   };
 
   // Service Worker 可能是刚被唤醒的，先把上一次的历史捞回来
-  chrome.storage.session.get(SESSION_KEY).then((s) => {
+  api.storage.session.get(SESSION_KEY).then((s) => {
     const saved = s[SESSION_KEY];
     if (saved?.messages?.length) {
       Object.assign(session, {
@@ -333,11 +334,11 @@ chrome.runtime.onConnect.addListener((port) => {
   // 于是很容易出现"新前端 + 旧后端"：前端发的消息旧后端没有对应分支，
   // 静默丢弃，界面就永远卡在加载中。用一个特性清单让前端能自己发现这件事。
   const FEATURES = ['conversations', 'profile', 'selection', 'modes'];
-  post(port, { type: 'hello', version: chrome.runtime.getManifest().version, features: FEATURES });
+  post(port, { type: 'hello', version: api.runtime.getManifest().version, features: FEATURES });
 
   port.onMessage.addListener(async (msg) => {
     if (msg.type === 'ping') {
-      post(port, { type: 'hello', version: chrome.runtime.getManifest().version, features: FEATURES });
+      post(port, { type: 'hello', version: api.runtime.getManifest().version, features: FEATURES });
       return;
     }
     if (msg.type === 'abort') {
@@ -394,7 +395,7 @@ chrome.runtime.onConnect.addListener((port) => {
         usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
         warnedContext: false,
       });
-      chrome.storage.session.remove(SESSION_KEY);
+      api.storage.session.remove(SESSION_KEY);
       post(port, { type: 'reset_done' });
       return;
     }
@@ -430,14 +431,14 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
     if (msg.type === 'list_conversations') {
-      const { [CONV_INDEX]: index = [] } = await chrome.storage.local.get(CONV_INDEX);
+      const { [CONV_INDEX]: index = [] } = await api.storage.local.get(CONV_INDEX);
       post(port, { type: 'conversations', list: index, current: session.convId });
       return;
     }
     if (msg.type === 'load_conversation') {
       await saveConversation(session);   // 别把当前这条弄丢了
       const key = CONV_KEY(msg.id);
-      const { [key]: conv } = await chrome.storage.local.get(key);
+      const { [key]: conv } = await api.storage.local.get(key);
       if (!conv) { post(port, { type: 'error', message: '这条对话已经不在了。' }); return; }
       Object.assign(session, {
         convId: conv.id,
@@ -453,9 +454,9 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
     if (msg.type === 'delete_conversation') {
-      const { [CONV_INDEX]: index = [] } = await chrome.storage.local.get(CONV_INDEX);
-      await chrome.storage.local.remove(CONV_KEY(msg.id));
-      await chrome.storage.local.set({ [CONV_INDEX]: index.filter((c) => c.id !== msg.id) });
+      const { [CONV_INDEX]: index = [] } = await api.storage.local.get(CONV_INDEX);
+      await api.storage.local.remove(CONV_KEY(msg.id));
+      await api.storage.local.set({ [CONV_INDEX]: index.filter((c) => c.id !== msg.id) });
       if (session.convId === msg.id) {
         Object.assign(session, {
           convId: null, messages: [], view: [], snapshotIds: [], origin: '',
@@ -463,10 +464,10 @@ chrome.runtime.onConnect.addListener((port) => {
           usage: { lastInput: 0, peakInput: 0, output: 0, cacheRead: 0, turns: 0 },
           warnedContext: false,
         });
-        chrome.storage.session.remove(SESSION_KEY);
+        api.storage.session.remove(SESSION_KEY);
         post(port, { type: 'reset_done' });
       }
-      const { [CONV_INDEX]: after = [] } = await chrome.storage.local.get(CONV_INDEX);
+      const { [CONV_INDEX]: after = [] } = await api.storage.local.get(CONV_INDEX);
       post(port, { type: 'conversations', list: after, current: session.convId });
       return;
     }
@@ -503,7 +504,7 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 function saveSession(session) {
-  return chrome.storage.session
+  return api.storage.session
     .set({
       [SESSION_KEY]: {
         convId: session.convId,
@@ -764,15 +765,16 @@ function userMessage(providerId, text) {
 const WEB_PAGE = ['http://*/*', 'https://*/*'];
 
 async function activeTab() {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true });
 
   // 只有当激活的是扩展自己的页面（设置页、或被当成标签页打开的侧边栏）时才回退。
-  // 范围必须卡这么窄：用户明明在看 chrome:// 却让 agent 去操作另一个标签页，
+  // 范围必须卡这么窄：用户明明在看浏览器内部页面，却让 agent 去操作另一个标签页，
   // 比直接报错更糟 —— 那种情况交给 assertInjectable 给出明确提示。
-  const isOwnPage = (tab?.url || '').startsWith('chrome-extension://');
+  const isOwnPage = /^(?:chrome|opera)-extension:\/\//.test(tab?.url || '') ||
+    (tab?.url || '').startsWith('moz-extension://');
   if (tab && !isOwnPage) return tab;
 
-  const candidates = await chrome.tabs.query({
+  const candidates = await api.tabs.query({
     url: WEB_PAGE,
     ...(tab?.windowId != null ? { windowId: tab.windowId } : {}),
   });
@@ -784,7 +786,7 @@ async function activeTab() {
 }
 
 async function loadConfig() {
-  const stored = await chrome.storage.local.get(DEFAULTS);
+  const stored = await api.storage.local.get(DEFAULTS);
   const cfg = { ...DEFAULTS, ...stored };
   const p = PROVIDERS[cfg.provider];
   if (p) {

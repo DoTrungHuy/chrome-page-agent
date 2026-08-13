@@ -1,3 +1,4 @@
+import { api } from './lib/api.js';
 import { PRESETS, PROVIDERS } from './lib/providers.js';
 
 const $ = (id) => document.getElementById(id);
@@ -20,7 +21,7 @@ const newId = () => 'a' + Date.now().toString(36) + Math.random().toString(36).s
 
 // ── 载入 + 迁移 ────────────────────────────────────────────────
 
-const stored = await chrome.storage.local.get({
+const stored = await api.storage.local.get({
   ...RUN_DEFAULTS,
   accounts: [], activeAccount: '',
   profiles: [], activeProfile: '',           // 上一版：一模型一档
@@ -246,7 +247,7 @@ $('save').addEventListener('click', async () => {
   const temp = $('temperature').value.trim();
   const acc = accounts.find((a) => a.id === activeAccount);
 
-  await chrome.storage.local.set({
+  await api.storage.local.set({
     accounts,
     activeAccount,
     // 生效配置仍然是这几个扁平字段 —— Service Worker 只认它们，
