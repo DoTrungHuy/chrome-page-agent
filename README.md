@@ -33,7 +33,7 @@ npm test
 
 | 命令 | 跑什么 |
 |---|---|
-| `npm test` | 全部 11 套 |
+| `npm test` | 全部 12 套 |
 | `npm run test:unit` | 只跑单元测试（不需要 Chrome，秒回） |
 | `npm run test:e2e` | 只跑端到端 |
 | `node tests/run.mjs modes` | 按关键词筛选套件 |
@@ -61,7 +61,7 @@ npm test
 node pack.mjs
 ```
 
-生成 `page-agent-v0.1.0.zip`（约 47 KB）。这个脚本刻意没用 Windows 的
+生成 `page-agent-v0.1.0.zip`（约 66 KB）。这个脚本刻意没用 Windows 的
 `Compress-Archive` —— 它写出来的条目路径是反斜杠（`icons\icon16.png`），
 而 ZIP 规范要求正斜杠，商店校验器可能直接拒。脚本自己写 ZIP，保证：
 解压后第一层就是 `manifest.json`（不能套文件夹）、路径分隔符正确、只含运行时文件。
