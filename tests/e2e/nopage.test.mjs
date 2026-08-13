@@ -12,10 +12,16 @@ const site = await startSite(
   '<!doctype html><meta charset=utf-8><title>普通网页</title><h1>普通网页</h1><p>正文内容。</p><button>按钮</button>'
 );
 
-// 听话的模型：有工具就先读页面，没工具就直接答
+// 听话的模型：普通网页先读页面；无网页时只有用户要求打开网页才导航
 const mock = await startMock(({ turn, body }) => {
   const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
-  if (hasTools && turn === 1) {
+  const names = body.tools?.map((x) => x.function?.name || x.name) || [];
+  const userText = [...(body.messages || [])].reverse().find((m) => m.role === 'user')?.content || '';
+  if (names.length === 1 && names[0] === 'navigate' && turn === 1 && String(userText).includes('打开')) {
+    return [oai.text('我先打开你指定的网页。'),
+      oai.toolCall('navigate', JSON.stringify({ url: site.url }), 'nav1'), oai.stop('tool_calls')];
+  }
+  if (hasTools && names.includes('read_page') && turn === 1) {
     return [oai.text('我先读一下页面。'), oai.toolCall('read_page', '{}', 'c1'), oai.stop('tool_calls')];
   }
   return [oai.text('巴黎是法国的首都。'), oai.stop()];
@@ -26,6 +32,8 @@ const sw = await browser.serviceWorker();
 await sw.evalJs(configScript(mock.url));
 
 const blankTab = await browser.newTab('about:blank');
+await sleep(800);
+const navTab = await browser.newTab('about:blank');
 await sleep(800);
 const pageTab = await browser.newTab(site.url);
 await sleep(2000);
@@ -50,17 +58,29 @@ await ask(blankTab.id, '法国的首都是哪里？');
   s.t('上下文条说明当前读不了页面', u.context.includes('无可读页面'), u.context);
 
   const req = mock.reqs[0];
-  s.t('这一轮压根没下发工具', !req.tools || req.tools.length === 0,
+  s.t('这一轮只下发网页导航工具', req.tools?.length === 1 && req.tools[0].function?.name === 'navigate',
     JSON.stringify(req.tools?.map?.((x) => x.function?.name)));
   const sys = String(req.messages[0].content);
-  s.t('系统提示告诉模型这轮没有页面工具', sys.includes('没有给你任何页面工具'), sys.slice(-200));
+  s.t('系统提示告诉模型这轮没有页面读取工具', sys.includes('没有给你读取页面的工具'), sys.slice(-240));
+  s.t('系统提示要求明确要打开的页面', sys.includes('若用户说想要打开什么页面') && sys.includes('明确你要打开的是哪一个'));
   s.t('明确要求它别喊"需要先读取页面"', sys.includes('不要说"我需要先读取页面"'));
   s.t('没有夹带无关的页面操作规矩', !sys.includes('[ref=N]'), '没有页面工具时不该讲 ref 编号');
   s.t('没有夹带无关的模式说明', !sys.includes('自动模式'), '没有页面工具时模式段没有意义');
   s.t('核心身份仍在，且鼓励展开回答', sys.includes('通用助手') && sys.includes('该展开就展开'));
 }
 
-// ── 2. 切回普通网页 ──────────────────────────────────────────────
+// ── 2. 明确要求时打开网页 ────────────────────────────────────────
+s.section('明确要求时打开网页');
+await ask(navTab.id, '请打开这个网页');
+{
+  const target = (await browser.targets()).find((x) => x.id === navTab.id);
+  const req = mock.reqs[0];
+  s.t('无页面时只调用 navigate', req.tools?.length === 1 && req.tools[0].function?.name === 'navigate',
+    JSON.stringify(req.tools?.map?.((x) => x.function?.name)));
+  s.t('按用户明确要求打开网页', (target?.url || '').startsWith(site.url), target?.url);
+}
+
+// ── 3. 切回普通网页 ──────────────────────────────────────────────
 s.section('切回普通网页');
 await reset();
 await ask(pageTab.id, '这个页面在讲什么');
@@ -75,17 +95,17 @@ await ask(pageTab.id, '这个页面在讲什么');
   s.t('这时才讲页面操作规矩', String(req.messages[0].content).includes('[ref=N]'));
 }
 
-// ── 3. 同一会话里切回空白页 ──────────────────────────────────────
+// ── 4. 同一会话里切回空白页 ──────────────────────────────────────
 s.section('同一会话里切回空白页');
 await ask(blankTab.id, '再问一个无关的问题');
 {
   const req = mock.reqs[0];
-  s.t('工具随标签页切换而消失', !req.tools || req.tools.length === 0,
+  s.t('工具随标签页切换只保留导航', req.tools?.length === 1 && req.tools[0].function?.name === 'navigate',
     JSON.stringify(req.tools?.map?.((x) => x.function?.name)));
   s.t('全程没有报错', (await panelState(panel)).errors.length === 0);
 }
 
-// ── 4. chrome:// 内部页面 ────────────────────────────────────────
+// ── 5. chrome:// 内部页面 ────────────────────────────────────────
 s.section('chrome:// 内部页面');
 await reset();
 {
