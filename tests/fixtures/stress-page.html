@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>快照压测页</title>
+<style>
+  .gone        { display: none; }
+  .invisible   { visibility: hidden; }
+  .transparent { opacity: 0; }
+  /* 自身零尺寸 + overflow:hidden：子元素 rect 非零、checkVisibility 也为 true，
+     只看自己发现不了 —— .sr-only 和折叠面板就是这么写的 */
+  .clipped     { width: 0; height: 0; overflow: hidden; }
+  /* 浮动导致父容器塌陷成 0 高，但子元素完全可见，不能误伤 */
+  .collapsed   { height: 0; }
+  .collapsed > * { float: left; }
+</style>
+</head>
+<body>
+
+<h1>快照压测页</h1>
+<p>顶层说明文字。</p>
+
+<section>
+  <h2>不可见用例</h2>
+  <div class="gone"><button>NEVERdisplaynone</button><p>NEVERtext1</p></div>
+  <div class="invisible"><button>NEVERvisibilityhidden</button></div>
+  <div class="transparent"><button>NEVERopacity0</button></div>
+  <div class="clipped"><button>NEVERclipped</button></div>
+  <input type="hidden" value="NEVERhiddeninput">
+</section>
+
+<section>
+  <h2>塌陷容器</h2>
+  <div class="collapsed"><button id="collapsed-btn">MUSTAPPEARcollapsed</button></div>
+</section>
+
+<section>
+  <h2>命名来源</h2>
+  <button id="b-arialabel" aria-label="来自arialabel"><svg width="10" height="10"></svg></button>
+  <span id="lbl-x">来自arialabelledby</span>
+  <button id="b-labelledby" aria-labelledby="lbl-x">X</button>
+  <button id="b-title" title="来自title"><svg width="10" height="10"></svg></button>
+  <button id="b-imgalt"><img alt="来自imgalt" width="10" height="10"
+    src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></button>
+  <button id="b-nameless"><svg width="10" height="10"></svg></button>
+  <label for="in1">带label的输入框</label><input id="in1" type="text" value="预填值">
+  <input id="in2" type="text" placeholder="仅有placeholder">
+  <textarea id="ta1" placeholder="文本域"></textarea>
+  <select id="sel1"><option value="a">选项甲</option><option value="b">选项乙</option></select>
+  <input id="cb1" type="checkbox" checked><label for="cb1">已勾选项</label>
+  <input id="cb2" type="checkbox"><label for="cb2">未勾选项</label>
+  <button id="dis1" disabled>禁用按钮</button>
+  <button id="exp1" aria-expanded="false">可展开</button>
+</section>
+
+<section>
+  <h2>行内混排</h2>
+  <p id="inline-p">The <code>fetchfn</code> method of the
+    <a href="/win" id="win-link">WindowIface</a> interface starts a request.</p>
+</section>
+
+<section>
+  <h2>混合容器</h2>
+  <div id="mixed">散落文本<div><p>块级后代文字ALPHA</p></div></div>
+</section>
+
+<section>
+  <h2>contents布局</h2>
+  <!-- display:contents 不生成布局盒子，checkVisibility() 按规范返回 false，
+       但子元素照常显示。现代 Grid 布局大量使用，误判会剪掉整棵子树 -->
+  <div style="display:contents">
+    <p>CONTENTSCHILDMUSTAPPEAR</p>
+    <button id="contents-btn">contents里的按钮</button>
+  </div>
+</section>
+
+<section>
+  <h2>嵌套可交互</h2>
+  <a href="/outer" id="outer-link">外层链接文字 <button id="inner-btn">内层按钮</button></a>
+</section>
+
+<section>
+  <h2>深层嵌套</h2>
+  <div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+    <a href="/deep" id="deep-link">深处的链接</a>
+  </div></div></div></div></div></div></div></div></div></div></div></div></div></div>
+</section>
+
+<section><h2>ShadowDOM</h2><div id="host"></div></section>
+
+<section>
+  <h2>受控输入框</h2>
+  <input id="controlled" type="text" aria-label="受控输入框">
+  <div id="clog">none</div>
+</section>
+
+<section id="bulk"><h2>大列表</h2></section>
+
+<script>
+  const sr = document.getElementById('host').attachShadow({ mode: 'open' });
+  sr.innerHTML = '<p>shadow里的文字</p><button id="shadow-btn">Shadow按钮</button>';
+
+  // React 风格受控输入：只有正确派发事件才会被记录
+  const ctrl = document.getElementById('controlled');
+  const clog = document.getElementById('clog');
+  ctrl.addEventListener('input', (e) => { clog.textContent = 'input:' + e.target.value; });
+  ctrl.addEventListener('change', () => { clog.textContent += '|change'; });
+
+  // 800 条链接，用来撑爆 24000 字符上限
+  let html = '';
+  for (let i = 1; i <= 800; i++) html += '<a href="/item/' + i + '">列表项目 ' + i + '</a> ';
+  document.getElementById('bulk').insertAdjacentHTML('beforeend', html);
+
+  window.__clicks = [];
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest && e.target.closest('a,button');
+    if (el) window.__clicks.push(el.id || (el.textContent || '').trim().slice(0, 20));
+    if (e.target.closest && e.target.closest('a')) e.preventDefault();
+  }, true);
+</script>
+</body>
+</html>
